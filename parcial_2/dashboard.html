@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard Criminalidad Los Ángeles</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background: #2d3e50;
+            color: #fff;
+            padding: 1rem 2rem;
+            text-align: center;
+        }
+        .dashboard {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            padding: 2rem;
+            justify-content: center;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 1.5rem;
+            min-width: 200px;
+            text-align: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+        }
+        input[type="file"] {
+            margin: 1rem 0;
+        }
+        .charts-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+        .chart-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 1rem;
+            min-width: 350px;
+            max-width: 500px;
+        }
+        .question-title {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: #2d3e50;
+        }
+        .hypothesis {
+            font-style: italic;
+            color: #555;
+            margin-bottom: 1rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 2rem;
+            background: #fff;
+        }
+        th, td {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background: #2d3e50;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Dashboard Criminalidad Los Ángeles</h1>
+        <p>Sube tu archivo CSV para visualizar los datos</p>
+    </header>
+    <div class="container">
+        <input type="file" id="csvFile" accept=".csv" />
+        <div class="dashboard" id="stats"></div>
+        <div class="charts-container" id="charts"></div>
+        <div id="table-container"></div>
+    </div>
+    <script>
+        function parseCSV(text) {
+            const lines = text.trim().split('\n');
+            const headers = lines[0].split(',');
+            const data = lines.slice(1).map(line => {
+                // Maneja comas dentro de comillas
+                const regex = /(".*?"|[^",\s]+)(?=\s*,|\s*$)/g;
+                const values = [];
+                let match;
+                while ((match = regex.exec(line))) {
+                    values.push(match[0].replace(/^"|"$/g, ''));
+                }
+                return Object.fromEntries(headers.map((h, i) => [h, values[i]]));
+            });
+            return { headers, data };
+        }
+
+        function showStats(data) {
+            const total = data.length;
+            const areaNames = {};
+            const crimeTypes = {};
+            const yearCounts = {};
+
+            data.forEach(row => {
+                areaNames[row['AREA NAME']] = (areaNames[row['AREA NAME']] || 0) + 1;
+                crimeTypes[row['Crm Cd Desc']] = (crimeTypes[row['Crm Cd Desc']] || 0) + 1;
+                let year = row['DATE OCC'] ? row['DATE OCC'].slice(-4) : '';
+                if (!isNaN(Number(year))) {
+                    yearCounts[year] = (yearCounts[year] || 0) + 1;
+                }
+            });
+
+            // Top área
+            const topArea = Object.entries(areaNames).sort((a,b)=>b[1]-a[1])[0];
+            // Top crimen
+            const topCrime = Object.entries(crimeTypes).sort((a,b)=>b[1]-a[1])[0];
+
+            document.getElementById('stats').innerHTML = `
+                <div class="card">
+                    <h2>${total}</h2>
+                    <p>Total de Incidentes</p>
+                </div>
+                <div class="card">
+                    <h2>${topArea ? topArea[0] : '-'}</h2>
+                    <p>Área con más incidentes</p>
+                </div>
+                <div class="card">
+                    <h2>${topCrime ? topCrime[0] : '-'}</h2>
+                    <p>Crimen más común</p>
+                </div>
+                <div class="card">
+                    <h2>${Object.keys(areaNames).length}</h2>
+                    <p>Áreas diferentes</p>
+                </div>
+                <div class="card">
+                    <h2>${Object.keys(crimeTypes).length}</h2>
+                    <p>Tipos de crimen</p>
+                </div>
+            `;
+        }
+
+        function showCharts(data) {
+            document.getElementById('charts').innerHTML = `
+                <div class="chart-card">
+                    <div class="question-title">¿Cómo ha variado la frecuencia de los delitos en Los Ángeles desde el año 2020 hasta la actualidad?</div>
+                    <div class="hypothesis">La frecuencia de delitos en Los Ángeles ha experimentado fluctuaciones significativas entre 2020 y la actualidad, posiblemente influenciada por factores como la pandemia, cambios económicos y políticas de seguridad.</div>
+                    <canvas id="trendCrimeYear"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="question-title">¿Existe una correlación significativa entre el horario del crimen y el tipo de delito cometido?</div>
+                    <div class="hypothesis">Determinados tipos de crimen presentan una alta correlación con franjas horarias específicas, lo que evidencia patrones temporales predecibles en la actividad delictiva.</div>
+                    <canvas id="heatmapCrimeHour"></canvas>
+                </div>
+                <div class="chart-card">
+                    <div class="question-title">¿La distribución espacial de los crímenes es uniforme o existen zonas con mayor concentración delictiva?</div>
+                    <div class="hypothesis">La criminalidad en Los Ángeles no se distribuye de forma uniforme, sino que se concentra en ciertas áreas geográficas con condiciones sociales, económicas o demográficas particulares.</div>
+                    <canvas id="barCrimeArea"></canvas>
+                </div>
+            `;
+
+            // --- Hipótesis 1: Tendencia anual desde 2020 ---
+            const yearCounts = {};
+            data.forEach(row => {
+                let date = row['DATE OCC'] || '';
+                let year = '';
+                // Intenta extraer año de formatos YYYY-MM-DD, MM/DD/YYYY, etc.
+                if (date.match(/^\d{4}/)) {
+                    year = date.slice(0,4);
+                } else if (date.match(/\d{2}\/\d{2}\/\d{4}/)) {
+                    year = date.slice(-4);
+                }
+                if (year >= '2020' && !isNaN(Number(year))) {
+                    yearCounts[year] = (yearCounts[year] || 0) + 1;
+                }
+            });
+            const years = Object.keys(yearCounts).sort();
+            const yearData = years.map(y=>yearCounts[y]);
+            new Chart(document.getElementById('trendCrimeYear'), {
+                type: 'line',
+                data: {
+                    labels: years,
+                    datasets: [{
+                        label: 'Incidentes',
+                        data: yearData,
+                        borderColor: '#36a2eb',
+                        backgroundColor: 'rgba(54,162,235,0.2)',
+                        fill: true,
+                        tension: 0.2
+                    }]
+                },
+                options: {
+                    plugins: {
+                        title: { display: false }
+                    },
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+
+            // --- Hipótesis 2: Heatmap tipo de crimen vs hora ---
+            // Agrupa por tipo de crimen y hora
+            const hourCrime = {};
+            const crimeTypesSet = new Set();
+            data.forEach(row => {
+                let hour = row['TIME OCC'] || '';
+                // TIME OCC puede ser 'HHMM' o 'HMM'
+                if (/^\d{3,4}$/.test(hour)) {
+                    hour = hour.padStart(4, '0').slice(0,2);
+                } else {
+                    hour = '??';
+                }
+                const crime = row['Crm Cd Desc'] || 'Desconocido';
+                crimeTypesSet.add(crime);
+                hourCrime[crime] = hourCrime[crime] || {};
+                hourCrime[crime][hour] = (hourCrime[crime][hour] || 0) + 1;
+            });
+            // Top 5 tipos de crimen
+            const topCrimes = Array.from(crimeTypesSet).map(crime => {
+                const total = Object.values(hourCrime[crime] || {}).reduce((a,b)=>a+b,0);
+                return { crime, total };
+            }).sort((a,b)=>b.total-a.total).slice(0,5).map(e=>e.crime);
+
+            const hours = Array.from({length:24}, (_,i)=>i.toString().padStart(2,'0'));
+            const datasets = topCrimes.map((crime, idx) => ({
+                label: crime,
+                data: hours.map(h => hourCrime[crime] && hourCrime[crime][h] ? hourCrime[crime][h] : 0),
+                borderColor: ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff'][idx],
+                backgroundColor: ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff'][idx],
+                fill: false
+            }));
+
+            new Chart(document.getElementById('heatmapCrimeHour'), {
+                type: 'line',
+                data: {
+                    labels: hours,
+                    datasets: datasets
+                },
+                options: {
+                    plugins: {
+                        title: { display: false }
+                    },
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        y: { beginAtZero: true },
+                        x: { title: { display: true, text: 'Hora del día' } }
+                    }
+                }
+            });
+
+            // --- Hipótesis 3: Distribución espacial (áreas) ---
+            const areaCounts = {};
+            data.forEach(row => {
+                const area = row['AREA NAME'] || 'Desconocido';
+                areaCounts[area] = (areaCounts[area] || 0) + 1;
+            });
+            const sortedAreas = Object.entries(areaCounts).sort((a,b)=>b[1]-a[1]);
+            const barLabels = sortedAreas.slice(0,10).map(e=>e[0]);
+            const barData = sortedAreas.slice(0,10).map(e=>e[1]);
+            new Chart(document.getElementById('barCrimeArea'), {
+                type: 'bar',
+                data: {
+                    labels: barLabels,
+                    datasets: [{
+                        label: 'Incidentes',
+                        data: barData,
+                        backgroundColor: '#36a2eb'
+                    }]
+                },
+                options: {
+                    plugins: {
+                        title: { display: false }
+                    },
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function showTable(headers, data) {
+            const table = document.createElement('table');
+            const thead = document.createElement('thead');
+            const tr = document.createElement('tr');
+            headers.forEach(h => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            data.slice(0, 20).forEach(row => {
+                const tr = document.createElement('tr');
+                headers.forEach(h => {
+                    const td = document.createElement('td');
+                    td.textContent = row[h];
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+
+            document.getElementById('table-container').innerHTML = '';
+            document.getElementById('table-container').appendChild(table);
+        }
+
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const { headers, data } = parseCSV(evt.target.result);
+                showStats(data);
+                showCharts(data);
+                showTable(headers, data);
+            };
+            reader.readAsText(file);
+        });
+    </script>
+</body>
+</html>
